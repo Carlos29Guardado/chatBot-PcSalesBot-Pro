@@ -1,4 +1,5 @@
 import telebot
+import certifi
 import google.generativeai as genai
 from pymongo import MongoClient
 import datetime
@@ -22,7 +23,8 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 MONGO_URI = os.environ.get('MONGO_URI')
 
 # 3. Conexión a MongoDB Atlas
-cliente_mongo = MongoClient(MONGO_URI)
+ca = certifi.where()
+cliente_mongo = MongoClient(MONGO_URI, tlsCAFile=ca)
 db = cliente_mongo['pc_sales_db']
 coleccion_historial = db['historial_chats']
 

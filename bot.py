@@ -50,6 +50,7 @@ def procesar_mensaje(message):
         bot.reply_to(message, texto_respuesta)
         coleccion_historial.insert_one({"chat_id": chat_id, "rol": "bot", "mensaje": texto_respuesta, "fecha": datetime.datetime.now()})
     except Exception as e:
+        print(f"ERROR DETECTADO: {e}")
         bot.reply_to(message, "Lo siento, tuve un problema procesando tu solicitud.")
 
 if __name__ == "__main__":

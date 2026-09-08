@@ -47,7 +47,8 @@ def procesar_mensaje(message):
     try:
         respuesta_gemini = modelo.generate_content(texto_usuario)
         texto_respuesta = respuesta_gemini.text
-        bot.reply_to(message, texto_respuesta)
+        texto_limpio = texto_respuesta.replace("**", "")
+        bot.reply_to(message, texto_limpio)
         coleccion_historial.insert_one({"chat_id": chat_id, "rol": "bot", "mensaje": texto_respuesta, "fecha": datetime.datetime.now()})
     except Exception as e:
         print(f"ERROR DETECTADO: {e}")

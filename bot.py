@@ -6,7 +6,7 @@ import certifi
 import telebot
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 from pymongo import MongoClient
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -17,6 +17,7 @@ load_dotenv()
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+GEMINI_FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
 MONGO_URI = os.environ["MONGO_URI"]
 
 SYSTEM_PROMPT = (
@@ -53,6 +54,23 @@ def guardar_mensaje(chat_id, rol, mensaje):
         log.error("No se pudo guardar el historial: %s", e)
 
 
+def generar_respuesta(texto_usuario):
+    # Si el modelo principal está saturado (error 5xx), se intenta con el de respaldo
+    ultimo_error = None
+    for modelo in (GEMINI_MODEL, GEMINI_FALLBACK_MODEL):
+        try:
+            respuesta = cliente_gemini.models.generate_content(
+                model=modelo,
+                contents=texto_usuario,
+                config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+            )
+            return respuesta.text
+        except errors.ServerError as e:
+            log.warning("Modelo %s no disponible: %s", modelo, e)
+            ultimo_error = e
+    raise ultimo_error
+
+
 @bot.message_handler(content_types=["text"])
 def procesar_mensaje(message):
     chat_id = message.chat.id
@@ -60,12 +78,7 @@ def procesar_mensaje(message):
     guardar_mensaje(chat_id, "usuario", texto_usuario)
 
     try:
-        respuesta = cliente_gemini.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=texto_usuario,
-            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
-        )
-        texto_respuesta = respuesta.text
+        texto_respuesta = generar_respuesta(texto_usuario)
         bot.reply_to(message, texto_respuesta.replace("**", ""))
         guardar_mensaje(chat_id, "bot", texto_respuesta)
     except Exception as e:

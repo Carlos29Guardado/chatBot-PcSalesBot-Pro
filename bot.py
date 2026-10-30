@@ -25,9 +25,17 @@ SYSTEM_PROMPT = (
     "Si te piden algo fuera del catálogo de tecnología, indica amablemente que llamen al +503 2222-1111."
 )
 
-# 2. Conexión a MongoDB Atlas
-cliente_mongo = MongoClient(MONGO_URI, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
-coleccion_historial = cliente_mongo["pc_sales_db"]["historial_chats"]
+# 2. Conexión a MongoDB Atlas (se abre al guardar el primer mensaje, así el bot
+#    arranca aunque el cluster esté pausado)
+coleccion_historial = None
+
+
+def obtener_historial():
+    global coleccion_historial
+    if coleccion_historial is None:
+        cliente_mongo = MongoClient(MONGO_URI, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
+        coleccion_historial = cliente_mongo["pc_sales_db"]["historial_chats"]
+    return coleccion_historial
 
 # 3. Configuración de Gemini
 cliente_gemini = genai.Client(api_key=GEMINI_API_KEY)
@@ -38,7 +46,7 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 def guardar_mensaje(chat_id, rol, mensaje):
     # Si Mongo falla, el bot debe seguir respondiendo
     try:
-        coleccion_historial.insert_one(
+        obtener_historial().insert_one(
             {"chat_id": chat_id, "rol": rol, "mensaje": mensaje, "fecha": datetime.datetime.now()}
         )
     except Exception as e:

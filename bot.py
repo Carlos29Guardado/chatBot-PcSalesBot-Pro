@@ -1,6 +1,7 @@
 import datetime
 import logging
 import os
+import unicodedata
 
 import certifi
 import telebot
@@ -55,7 +56,7 @@ def guardar_mensaje(chat_id, rol, mensaje):
 
 
 def generar_respuesta(texto_usuario):
-    # Si el modelo principal está saturado (error 5xx), se intenta con el de respaldo
+    # Si el modelo principal está saturado (5xx) o sin cuota (429), se intenta con el de respaldo
     ultimo_error = None
     for modelo in (GEMINI_MODEL, GEMINI_FALLBACK_MODEL):
         try:
@@ -65,10 +66,38 @@ def generar_respuesta(texto_usuario):
                 config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
             )
             return respuesta.text
-        except errors.ServerError as e:
+        except errors.APIError as e:
+            if not (isinstance(e, errors.ServerError) or e.code == 429):
+                raise
             log.warning("Modelo %s no disponible: %s", modelo, e)
             ultimo_error = e
     raise ultimo_error
+
+
+MENSAJE_BIENVENIDA = (
+    "¡Hola! 👋 Soy PC-SalesBot Pro, tu asesor de computadoras y hardware.\n\n"
+    "Puedo ayudarte a:\n"
+    "• Armar una PC según tu presupuesto y uso (gaming, programación, diseño, oficina)\n"
+    "• Recomendarte componentes: procesador, tarjeta gráfica, RAM, almacenamiento\n"
+    "• Comparar opciones y resolver dudas antes de comprar\n\n"
+    "Por ejemplo, escríbeme: \"Quiero una PC para programar con $600\"."
+)
+
+SALUDOS = {
+    "hola", "holaa", "hi", "hello", "hey", "buenas", "buenos dias", "buenas tardes",
+    "buenas noches", "que tal", "saludos",
+}
+
+
+def es_saludo(texto):
+    normalizado = unicodedata.normalize("NFD", texto.lower())
+    normalizado = "".join(c for c in normalizado if c.isalnum() or c.isspace())
+    return " ".join(normalizado.split()) in SALUDOS
+
+
+@bot.message_handler(commands=["start", "help", "ayuda"])
+def bienvenida(message):
+    bot.reply_to(message, MENSAJE_BIENVENIDA)
 
 
 @bot.message_handler(content_types=["text"])
@@ -76,6 +105,12 @@ def procesar_mensaje(message):
     chat_id = message.chat.id
     texto_usuario = message.text
     guardar_mensaje(chat_id, "usuario", texto_usuario)
+
+    # Los saludos se responden sin llamar a Gemini
+    if es_saludo(texto_usuario):
+        bot.reply_to(message, MENSAJE_BIENVENIDA)
+        guardar_mensaje(chat_id, "bot", MENSAJE_BIENVENIDA)
+        return
 
     try:
         texto_respuesta = generar_respuesta(texto_usuario)

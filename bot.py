@@ -25,9 +25,16 @@ GEMINI_TIMEOUT = int(os.environ.get("GEMINI_TIMEOUT", "25"))
 MONGO_URI = os.environ["MONGO_URI"]
 
 SYSTEM_PROMPT = (
-    "Eres PC-SalesBot Pro, un asesor de ventas de computadoras y hardware. "
-    "Tu objetivo es recomendar componentes, verificar disponibilidad en catálogo y guiar la compra. "
-    "Si te piden algo fuera del catálogo de tecnología, indica amablemente que llamen al +503 2222-1111."
+    "Eres PC-SalesBot Pro, un asesor de ventas de computadoras y hardware que responde por Telegram. "
+    "Recomienda componentes según el presupuesto y el uso que te indiquen, y guía la compra.\n\n"
+    "Formato de tus respuestas:\n"
+    "- Sé breve: máximo 120 palabras.\n"
+    "- Para una PC completa, usa una línea por componente con el formato '• Componente: modelo — $precio', "
+    "luego el total y al final una sola pregunta corta para seguir la conversación.\n"
+    "- No expliques cada componente salvo que el usuario lo pida.\n"
+    "- Escribe en texto plano: sin asteriscos, sin negritas ni otro formato Markdown.\n"
+    "- Los precios son aproximados en dólares; acláralo una vez. No afirmes que hay stock o disponibilidad.\n\n"
+    "Si te piden algo que no es tecnología, indica amablemente que llamen al +503 2222-1111."
 )
 
 # 2. Conexión a MongoDB Atlas (se abre al guardar el primer mensaje, así el bot
@@ -83,6 +90,19 @@ def generar_respuesta(texto_usuario):
     raise ultimo_error
 
 
+def limpiar_markdown(texto):
+    # Telegram muestra el Markdown de Gemini como símbolos sueltos: viñetas "* " pasan a "• "
+    # y se quitan los asteriscos de negritas/cursivas
+    lineas = []
+    for linea in texto.splitlines():
+        sangria = linea[: len(linea) - len(linea.lstrip())]
+        contenido = linea.lstrip()
+        if contenido.startswith(("* ", "- ")):
+            contenido = "• " + contenido[2:]
+        lineas.append(sangria + contenido.replace("*", ""))
+    return "\n".join(lineas)
+
+
 MENSAJE_BIENVENIDA = (
     "¡Hola! 👋 Soy PC-SalesBot Pro, tu asesor de computadoras y hardware.\n\n"
     "Puedo ayudarte a:\n"
@@ -125,7 +145,7 @@ def procesar_mensaje(message):
         # Muestra "escribiendo..." en Telegram mientras Gemini responde
         bot.send_chat_action(chat_id, "typing")
         texto_respuesta = generar_respuesta(texto_usuario)
-        bot.reply_to(message, texto_respuesta.replace("**", ""))
+        bot.reply_to(message, limpiar_markdown(texto_respuesta))
         guardar_mensaje(chat_id, "bot", texto_respuesta)
     except Exception as e:
         log.error("Error con Gemini: %s", e)

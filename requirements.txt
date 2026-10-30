@@ -3,3 +3,4 @@ google-genai
 pymongo
 certifi
 python-dotenv
+httpx

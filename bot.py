@@ -4,6 +4,7 @@ import os
 import unicodedata
 
 import certifi
+import httpx
 import telebot
 from dotenv import load_dotenv
 from google import genai
@@ -19,6 +20,8 @@ TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
 GEMINI_FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
+# Segundos máximos de espera por modelo antes de pasar al de respaldo
+GEMINI_TIMEOUT = int(os.environ.get("GEMINI_TIMEOUT", "25"))
 MONGO_URI = os.environ["MONGO_URI"]
 
 SYSTEM_PROMPT = (
@@ -40,7 +43,10 @@ def obtener_historial():
     return coleccion_historial
 
 # 3. Configuración de Gemini
-cliente_gemini = genai.Client(api_key=GEMINI_API_KEY)
+cliente_gemini = genai.Client(
+    api_key=GEMINI_API_KEY,
+    http_options=types.HttpOptions(timeout=GEMINI_TIMEOUT * 1000),  # en milisegundos
+)
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
@@ -70,6 +76,9 @@ def generar_respuesta(texto_usuario):
             if not (isinstance(e, errors.ServerError) or e.code == 429):
                 raise
             log.warning("Modelo %s no disponible: %s", modelo, e)
+            ultimo_error = e
+        except httpx.TimeoutException as e:
+            log.warning("Modelo %s no respondió en %s s", modelo, GEMINI_TIMEOUT)
             ultimo_error = e
     raise ultimo_error
 
@@ -113,6 +122,8 @@ def procesar_mensaje(message):
         return
 
     try:
+        # Muestra "escribiendo..." en Telegram mientras Gemini responde
+        bot.send_chat_action(chat_id, "typing")
         texto_respuesta = generar_respuesta(texto_usuario)
         bot.reply_to(message, texto_respuesta.replace("**", ""))
         guardar_mensaje(chat_id, "bot", texto_respuesta)
